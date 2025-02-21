@@ -33,25 +33,24 @@ exports.main = async (event) => {
       currentValues[propName] = contactResponse.properties[propName] || "";
     });
 
-    // 4) Build an "optionsMap" for any SELECT-type properties
+    // 4) Fetch all property definitions in a single API call
+    const propertiesResponse = await hubspotClient.crm.properties.coreApi.getAll("contacts");
+    const properties = propertiesResponse.results;
+
+    // 5) Build an "optionsMap" for any SELECT-type properties
     const optionsMap = {};
-    for (const propName of propertyNames) {
-      const propDef = await hubspotClient.crm.properties.coreApi.getByName(
-        "contacts",
-        propName
-      );
-      // If the property definition has picklist options, store them
-      if (Array.isArray(propDef.options) && propDef.options.length > 0) {
-        optionsMap[propName] = propDef.options.map((opt) => ({
+    properties.forEach((propDef) => {
+      if (propertyNames.includes(propDef.name) && Array.isArray(propDef.options) && propDef.options.length > 0) {
+        optionsMap[propDef.name] = propDef.options.map((opt) => ({
           label: opt.label,
           value: opt.value,
         }));
       } else {
-        optionsMap[propName] = [];
+        optionsMap[propDef.name] = [];
       }
-    }
+    });
 
-    // 5) Transform competitor_contract_end_date to { year, month, date }
+    // 6) Transform competitor_contract_end_date to { year, month, date }
     if (currentValues.competitor_contract_end_date) {
       const rawVal = Number(currentValues.competitor_contract_end_date);
       if (!isNaN(rawVal) && rawVal > 0) {
@@ -71,7 +70,7 @@ exports.main = async (event) => {
       currentValues.competitor_contract_end_date = null;
     }
 
-    // 6) Return everything back to the React code
+    // 7) Return everything back to the React code
     return {
       success: true,
       currentValues,
