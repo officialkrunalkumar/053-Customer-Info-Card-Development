@@ -1,0 +1,12 @@
+{
+  "type": "crm-card",
+  "data": {
+    "title": "Customer Info",
+    "uid": "customer_card",
+    "location": "crm.record.tab",
+    "module": {
+      "file": "customer.tsx"
+    },
+    "objectTypes": [{ "name": "contacts" }]
+  }
+}

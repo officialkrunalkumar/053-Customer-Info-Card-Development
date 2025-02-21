@@ -1,0 +1,12 @@
+{
+  "appFunctions": {
+    "getContactFields": {
+      "file": "getContactFields.js",
+      "secrets": []
+    },
+    "updateContact": {
+      "file": "updateContact.js",
+      "secrets": []
+    }
+  }
+}

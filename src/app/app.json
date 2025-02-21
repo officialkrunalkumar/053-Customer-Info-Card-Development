@@ -1,0 +1,20 @@
+{
+  "name": "Zeni Revenue Operations",
+  "description": "",
+  "uid": "revenue_operations",
+  "scopes": [
+    "crm.objects.contacts.read",
+    "crm.objects.contacts.write",
+    "crm.schemas.contacts.write"
+  ],
+  "public": false,
+  "extensions": {
+    "crm": {
+      "cards": [
+        {
+          "file": "extensions/customer-card.json"
+        }
+      ]
+    }
+  }
+}
