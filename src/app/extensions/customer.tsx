@@ -284,6 +284,9 @@ const Extension = ({ actions }) => {
           console.log('Contact updated successfully!', res);
           actions.refreshObjectProperties();
           setSaveSuccess(true);
+          setTimeout(() => {
+            setSaveSuccess(false);
+          }, 3000);
         } else {
           console.error('Failed to update contact:', res.error);
           setSaveSuccess(false);
@@ -295,10 +298,20 @@ const Extension = ({ actions }) => {
       });
   };
 
+  const [dots, setDots] = React.useState("");
+
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setDots((prev) => (prev.length < 20 ? `${prev} 🚀` : ""));
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, []);
+
   if (isLoading) {
     return (
       <Tile>
-        <Text>Loading contact data...</Text>
+        <Text>Loading contact data{dots}</Text>
       </Tile>
     );
   }
