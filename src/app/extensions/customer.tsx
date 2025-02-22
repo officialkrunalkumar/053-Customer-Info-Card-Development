@@ -23,7 +23,9 @@ hubspot.extend<'crm.record.tab'>(({ actions }) => <Extension actions={actions} /
 const Extension = ({ actions }) => {
   const [contactId, setContactId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  // Reuse the dots state only for loading.
+  const [dots, setDots] = useState("");
 
   // Store dropdown options by property name
   const [optionsMap, setOptionsMap] = useState<
@@ -42,7 +44,7 @@ const Extension = ({ actions }) => {
     bill_pay_method: '',
     expense_reimbursement_app: '',
     pilot_customer_: '',
-    competitor_contract_end_date: '', // Will eventually hold an object
+    competitor_contract_end_date: '',
     accounting_platform__other_: '',
     bill_pay_method__other_: '',
     expense_reimbursement_app__other_: '',
@@ -86,7 +88,6 @@ const Extension = ({ actions }) => {
   });
 
   // For testing, define a hard-coded test date.
-  // This represents March 1, 2025 (year: 2025, month: 2 because months are 0-based, date: 1)
   const testdate = { year: 2025, month: 2, date: 19 };
 
   /**
@@ -169,7 +170,6 @@ const Extension = ({ actions }) => {
           ],
         },
       })
-
       .then((res) => {
         if (!res.success) {
           console.error('Error from getContactFields:', res.error);
@@ -179,7 +179,6 @@ const Extension = ({ actions }) => {
 
         const { currentValues, optionsMap } = res;
 
-        // Transform internal_finance_team if returned as a semicolon-separated string
         if (
           currentValues.internal_finance_team &&
           typeof currentValues.internal_finance_team === 'string'
@@ -219,12 +218,10 @@ const Extension = ({ actions }) => {
             .map((item) => item.trim())
             .filter((item) => item);
         }
-        // Update local form data with fetched values.
-        // If competitor_contract_end_date is empty, you can fall back to testdate.
+
         setFormData((prev) => ({
           ...prev,
           ...currentValues,
-          // Fallback: if API returns a falsey value, use the test date.
           competitor_contract_end_date: currentValues.competitor_contract_end_date || testdate,
         }));
         setOptionsMap(optionsMap || {});
@@ -239,13 +236,12 @@ const Extension = ({ actions }) => {
   /**
    * Update formData in state
    */
-  const handleFieldChange = (propertyName: string, newValue: any) => {
+  const handleFieldChange = (propertyName, newValue) => {
     setFormData((prev) => ({ ...prev, [propertyName]: newValue }));
   };
 
   /**
    * 3) On submit, update the contact record.
-   * (In updateContact.js, you'll convert the value from DateInput (object) to a Unix timestamp.)
    */
   const handleSubmit = () => {
     if (!contactId) {
@@ -253,7 +249,9 @@ const Extension = ({ actions }) => {
       return;
     }
 
-    // Convert specified fields from array to string if needed.
+    setIsSaving(true);
+
+    // Process fields before submission.
     const processedFields = Object.entries(formData).reduce(
       (acc, [key, value]) => {
         if (key === 'internal_finance_team' && Array.isArray(value)) {
@@ -280,33 +278,32 @@ const Extension = ({ actions }) => {
         },
       })
       .then((res) => {
+        setIsSaving(false);
         if (res.success) {
           console.log('Contact updated successfully!', res);
           actions.refreshObjectProperties();
-          setSaveSuccess(true);
-          setTimeout(() => {
-            setSaveSuccess(false);
-          }, 3000);
         } else {
           console.error('Failed to update contact:', res.error);
-          setSaveSuccess(false);
         }
       })
       .catch((err) => {
+        setIsSaving(false);
         console.error('Error calling updateContact:', err);
-        setSaveSuccess(false);
       });
   };
 
-  const [dots, setDots] = React.useState("");
-
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => (prev.length < 20 ? `${prev} 🚀` : ""));
-    }, 200);
-
+  // Animate the dots only while loading.
+  useEffect(() => {
+    let interval;
+    if (isLoading) {
+      interval = setInterval(() => {
+        setDots((prev) => (prev.length < 3 ? prev + '.' : ''));
+      }, 500);
+    } else {
+      setDots("");
+    }
     return () => clearInterval(interval);
-  }, []);
+  }, [isLoading]);
 
   if (isLoading) {
     return (
@@ -317,171 +314,174 @@ const Extension = ({ actions }) => {
   }
 
   return (
-    <Tile>
-      <Flex direction="column" gap="sm">
-        <Heading>Lead Information</Heading>
-        <Text variant="microcopy">This section must be completed by BDRs.</Text>
-        <Divider />
-        <Form onSubmit={handleSubmit}>
-          <Flex direction="row" gap="lg">
-            <Flex direction="column" gap="md">
-              <Select
-                label="US Entity with US Bank Accounts?"
-                name="is_this_a_us_entity_with_us_bank_accounts_"
-                options={optionsMap.is_this_a_us_entity_with_us_bank_accounts_ || []}
-                value={formData.is_this_a_us_entity_with_us_bank_accounts_}
-                onChange={(val) =>
-                  handleFieldChange('is_this_a_us_entity_with_us_bank_accounts_', val)
-                }
-              />
-
-              <Select
-                label="Accounting Platform"
-                name="accounting_platform"
-                options={optionsMap.accounting_platform || []}
-                value={formData.accounting_platform}
-                onChange={(val) => handleFieldChange('accounting_platform', val)}
-              />
-              {formData.accounting_platform &&
-                formData.accounting_platform.toLowerCase() === 'other' && (
-                  <Input
-                    label="Accounting Platform (Other)"
-                    name="accounting_platform__other_"
-                    value={formData.accounting_platform__other_}
-                    onChange={(val) => handleFieldChange('accounting_platform__other_', val)}
-                  />
-                )}
-
-              <Select
-                label="Timing"
-                name="timing"
-                options={optionsMap.timing || []}
-                value={formData.timing}
-                onChange={(val) => handleFieldChange('timing', val)}
-              />
-
-              {formData.pilot_customer_ &&
-                formData.pilot_customer_.toLowerCase() === 'other' && (
-                  <Input
-                    label="Competitor (Other)"
-                    name="competitor_other"
-                    value={formData.competitor_other}
-                    onChange={(val) =>
-                      handleFieldChange('competitor_other', val)
-                    }
-                  />
-                )}
-
-              <Select
-                label="Bill Pay Method"
-                name="bill_pay_method"
-                options={optionsMap.bill_pay_method || []}
-                value={formData.bill_pay_method}
-                onChange={(val) => handleFieldChange('bill_pay_method', val)}
-              />
-              {formData.bill_pay_method &&
-                formData.bill_pay_method.toLowerCase() === 'other' && (
-                  <Input
-                    label="Bill Pay Method (Other)"
-                    name="bill_pay_method__other_"
-                    value={formData.bill_pay_method__other_}
-                    onChange={(val) => handleFieldChange('bill_pay_method__other_', val)}
-                  />
-                )}
-
-              <TextArea
-                label="Pain Points"
-                name="pain_points"
-                value={formData.pain_points}
-                onChange={(val) => handleFieldChange('pain_points', val)}
-              />
-            </Flex>
-
-            <Flex direction="column" gap="md">
-              <NumberInput
-                label="Estimated Monthly Expenses"
-                name="estimated_monthly_expenses"
-                placeholder="$"
-                precision={2}
-                value={formData.estimated_monthly_expenses}
-                onChange={(val) => handleFieldChange('estimated_monthly_expenses', val)}
-              />
-
-              <MultiSelect
-                label="Finance Team"
-                name="internal_finance_team"
-                options={optionsMap.internal_finance_team || []}
-                value={formData.internal_finance_team}
-                onChange={(val) => handleFieldChange('internal_finance_team', val)}
-              />
-
-              <Select
-                label="Competitor"
-                name="pilot_customer_"
-                options={optionsMap.pilot_customer_ || []}
-                value={formData.pilot_customer_}
-                onChange={(val) => handleFieldChange('pilot_customer_', val)}
-              />
-              {formData.pilot_customer_ &&
-                formData.pilot_customer_.toLowerCase() !== 'none' &&
-                formData.pilot_customer_.trim() !== '' && (
-                  <DateInput
-                    label="Competitor Contract End Date"
-                    name="competitor_contract_end_date"
-                    value={formData.competitor_contract_end_date}
-                    onChange={(val) =>
-                      handleFieldChange('competitor_contract_end_date', val)
-                    }
-                  />
-                )}
-
-              <Select
-                label="Expense Reimbursement App"
-                name="expense_reimbursement_app"
-                options={optionsMap.expense_reimbursement_app || []}
-                value={formData.expense_reimbursement_app}
-                onChange={(val) => handleFieldChange('expense_reimbursement_app', val)}
-              />
-              {formData.expense_reimbursement_app &&
-                formData.expense_reimbursement_app.toLowerCase() === 'other' && (
-                  <Input
-                    label="Expense Reimbursement App (Other)"
-                    name="expense_reimbursement_app__other_"
-                    value={formData.expense_reimbursement_app__other_}
-                    onChange={(val) =>
-                      handleFieldChange('expense_reimbursement_app__other_', val)
-                    }
-                  />
-                )}
-
-              <TextArea
-                label="How We Will Win"
-                name="how_we_will_win"
-                value={formData.how_we_will_win}
-                onChange={(val) => handleFieldChange('how_we_will_win', val)}
-              />
-            </Flex>
-          </Flex>
+    <>
+      {/* Lead Information */}
+      <Tile>
+        <Flex direction="column" gap="sm">
+          <Heading>Lead Information</Heading>
+          <Text variant="microcopy">This section must be completed by BDRs.</Text>
           <Divider />
-          <Flex direction="row" justify="end" align="center">
-            <Button variant="primary" type="submit">
-              Save {saveSuccess && <Icon name="success" />}
-            </Button>
-          </Flex>
-        </Form>
+          <Form onSubmit={handleSubmit}>
+            <Flex direction="row" gap="sm">
+              <Flex direction="column" gap="sm">
+                <Select
+                  label="US Entity with US Bank Accounts?"
+                  name="is_this_a_us_entity_with_us_bank_accounts_"
+                  options={optionsMap.is_this_a_us_entity_with_us_bank_accounts_ || []}
+                  value={formData.is_this_a_us_entity_with_us_bank_accounts_}
+                  onChange={(val) =>
+                    handleFieldChange('is_this_a_us_entity_with_us_bank_accounts_', val)
+                  }
+                />
+
+                <Select
+                  label="Accounting Platform"
+                  name="accounting_platform"
+                  options={optionsMap.accounting_platform || []}
+                  value={formData.accounting_platform}
+                  onChange={(val) => handleFieldChange('accounting_platform', val)}
+                />
+                {formData.accounting_platform &&
+                  formData.accounting_platform.toLowerCase() === 'other' && (
+                    <Input
+                      label="Accounting Platform (Other)"
+                      name="accounting_platform__other_"
+                      value={formData.accounting_platform__other_}
+                      onChange={(val) => handleFieldChange('accounting_platform__other_', val)}
+                    />
+                  )}
+
+                <Select
+                  label="Timing"
+                  name="timing"
+                  options={optionsMap.timing || []}
+                  value={formData.timing}
+                  onChange={(val) => handleFieldChange('timing', val)}
+                />
+
+                {formData.pilot_customer_ &&
+                  formData.pilot_customer_.toLowerCase() === 'other' && (
+                    <Input
+                      label="Competitor (Other)"
+                      name="competitor_other"
+                      value={formData.competitor_other}
+                      onChange={(val) =>
+                        handleFieldChange('competitor_other', val)
+                      }
+                    />
+                  )}
+
+                <Select
+                  label="Bill Pay Method"
+                  name="bill_pay_method"
+                  options={optionsMap.bill_pay_method || []}
+                  value={formData.bill_pay_method}
+                  onChange={(val) => handleFieldChange('bill_pay_method', val)}
+                />
+                {formData.bill_pay_method &&
+                  formData.bill_pay_method.toLowerCase() === 'other' && (
+                    <Input
+                      label="Bill Pay Method (Other)"
+                      name="bill_pay_method__other_"
+                      value={formData.bill_pay_method__other_}
+                      onChange={(val) => handleFieldChange('bill_pay_method__other_', val)}
+                    />
+                  )}
+
+                <TextArea
+                  label="Pain Points"
+                  name="pain_points"
+                  value={formData.pain_points}
+                  onChange={(val) => handleFieldChange('pain_points', val)}
+                />
+              </Flex>
+
+              <Flex direction="column" gap="sm">
+                <NumberInput
+                  label="Estimated Monthly Expenses"
+                  name="estimated_monthly_expenses"
+                  placeholder="$"
+                  precision={2}
+                  value={formData.estimated_monthly_expenses}
+                  onChange={(val) => handleFieldChange('estimated_monthly_expenses', val)}
+                />
+
+                <MultiSelect
+                  label="Finance Team"
+                  name="internal_finance_team"
+                  options={optionsMap.internal_finance_team || []}
+                  value={formData.internal_finance_team}
+                  onChange={(val) => handleFieldChange('internal_finance_team', val)}
+                />
+
+                <Select
+                  label="Competitor"
+                  name="pilot_customer_"
+                  options={optionsMap.pilot_customer_ || []}
+                  value={formData.pilot_customer_}
+                  onChange={(val) => handleFieldChange('pilot_customer_', val)}
+                />
+                {formData.pilot_customer_ &&
+                  formData.pilot_customer_.toLowerCase() !== 'none' &&
+                  formData.pilot_customer_.trim() !== '' && (
+                    <DateInput
+                      label="Competitor Contract End Date"
+                      name="competitor_contract_end_date"
+                      value={formData.competitor_contract_end_date}
+                      onChange={(val) =>
+                        handleFieldChange('competitor_contract_end_date', val)
+                      }
+                    />
+                  )}
+
+                <Select
+                  label="Expense Reimbursement App"
+                  name="expense_reimbursement_app"
+                  options={optionsMap.expense_reimbursement_app || []}
+                  value={formData.expense_reimbursement_app}
+                  onChange={(val) => handleFieldChange('expense_reimbursement_app', val)}
+                />
+                {formData.expense_reimbursement_app &&
+                  formData.expense_reimbursement_app.toLowerCase() === 'other' && (
+                    <Input
+                      label="Expense Reimbursement App (Other)"
+                      name="expense_reimbursement_app__other_"
+                      value={formData.expense_reimbursement_app__other_}
+                      onChange={(val) => handleFieldChange('expense_reimbursement_app__other_', val)}
+                    />
+                  )}
+
+                <TextArea
+                  label="How We Will Win"
+                  name="how_we_will_win"
+                  value={formData.how_we_will_win}
+                  onChange={(val) => handleFieldChange('how_we_will_win', val)}
+                />
+              </Flex>
+            </Flex>
+            <Divider />
+            <Flex direction="row" justify="end" align="center">
+              <Button variant="primary" type="submit" disabled={isSaving}>
+                {isSaving ? 'Saving' : 'Save'}
+              </Button>
+            </Flex>
+          </Form>
+        </Flex>
+      </Tile>
+
+      {/* Business Information */}
+      <Tile>
         <Heading>Business Information</Heading>
         <Text variant="microcopy">This section must be completed by AEs.</Text>
         <Divider />
         <Form onSubmit={handleSubmit}>
-          <Flex direction="row" gap="lg">
-            <Flex direction="column" gap="md">
+          <Flex direction="row" gap="sm">
+            <Flex direction="column" gap="sm">
               <Input
                 label="Company Name"
                 name="company"
                 value={formData.company}
-                onChange={(val) =>
-                  handleFieldChange('company', val)
-                }
+                onChange={(val) => handleFieldChange('company', val)}
               />
 
               <Input
@@ -520,22 +520,25 @@ const Extension = ({ actions }) => {
                 label="Number of Subsidiaries"
                 name="number_of_subsidiaries"
                 placeholder="0"
-                formatStyle='decimal'
+                formatStyle="decimal"
                 value={formData.number_of_subsidiaries}
                 onChange={(val) => handleFieldChange('number_of_subsidiaries', val)}
               />
 
-              <Select
-                label="Last Funding Round"
-                name="last_funding_round"
-                options={optionsMap.last_funding_round || []}
-                value={formData.last_funding_round}
-                onChange={(val) =>
-                  handleFieldChange('last_funding_round', val)
-                }
-              />
+              {formData.vc_pe_backed &&
+                formData.vc_pe_backed === 'true' && (
+                  <Select
+                    label="Last Funding Round"
+                    name="last_funding_round"
+                    options={optionsMap.last_funding_round || []}
+                    value={formData.last_funding_round}
+                    onChange={(val) =>
+                      handleFieldChange('last_funding_round', val)
+                    }
+                  />
+                )}
             </Flex>
-            <Flex direction="column" gap="md">
+            <Flex direction="column" gap="sm">
               <Input
                 label="Industry"
                 name="industry"
@@ -571,7 +574,7 @@ const Extension = ({ actions }) => {
                 label="Number of Employees"
                 name="number_of_employees"
                 placeholder="0"
-                formatStyle='decimal'
+                formatStyle="decimal"
                 value={formData.number_of_employees}
                 onChange={(val) => handleFieldChange('number_of_employees', val)}
               />
@@ -586,279 +589,304 @@ const Extension = ({ actions }) => {
                 }
               />
 
-              <NumberInput
-                label="Last Funding Round Amount"
-                name="last_funding_round_amount"
-                placeholder="$"
-                precision={2}
-                value={formData.last_funding_round_amount}
-                onChange={(val) => handleFieldChange('last_funding_round_amount', val)}
-              />
-
+              {formData.vc_pe_backed &&
+                formData.vc_pe_backed === 'true' && (
+                  <NumberInput
+                    label="Last Funding Round Amount"
+                    name="last_funding_round_amount"
+                    placeholder="$"
+                    precision={2}
+                    value={formData.last_funding_round_amount}
+                    onChange={(val) => handleFieldChange('last_funding_round_amount', val)}
+                  />
+                )}
             </Flex>
           </Flex>
           <Divider />
           <Flex direction="row" justify="end" align="center">
-            <Button variant="primary" type="submit">
-              Save {saveSuccess && <Icon name="success" />}
+            <Button variant="primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Saving' : 'Save'}
             </Button>
           </Flex>
         </Form>
+      </Tile>
+
+      {/* Financial Operations */}
+      <Tile>
         <Heading>Financial Operations</Heading>
         <Text variant="microcopy">This section must be completed by AEs.</Text>
         <Divider />
         <Form onSubmit={handleSubmit}>
-          <Input
-            label="Finance Point of Contact Email"
-            name="finance_point_of_contact_email"
-            value={formData.finance_point_of_contact_email}
-            onChange={(val) => handleFieldChange('finance_point_of_contact_email', val)}
-          />
-          <Flex direction="row" gap="lg">
-          <Flex direction="column" gap="md">
-          <Select
+          <Flex direction="row" gap="sm">
+            <Flex direction="column" gap="sm">
+              <Select
                 label="Accounting Platform"
                 name="accounting_platform"
                 options={optionsMap.accounting_platform || []}
                 value={formData.accounting_platform}
                 onChange={(val) => handleFieldChange('accounting_platform', val)}
-            />
-            <Input 
+              />
+              <Input
                 label="Bank(s)"
                 name="bank_s_"
                 value={formData.bank_s_}
                 onChange={(val) => handleFieldChange('bank_s_', val)}
-            />
-            </Flex>
-            <Flex direction="column" gap="md">
-            <Input
-                label="Accounting Platform (Other)"
-                name="accounting_platform__other_"
-                value={formData.accounting_platform__other_}
-                onChange={(val) => handleFieldChange('accounting_platform__other_', val)}
-            />
-            <Input
-                label="Credit Card(s)"
-                name="credit_card_s_"
-                value={formData.credit_card_s_}
-                onChange={(val) => handleFieldChange('credit_card_s_', val)}
-            />
-            </Flex>
-            </Flex>
-            <NumberInput
-                label="Number of Vendor Bills Processed Monthly"
-                name="number_of_vendor_bills_processed_monthly"
-                placeholder="0"
-                formatStyle='decimal'
-                value={formData.number_of_vendor_bills_processed_monthly}
-                onChange={(val) => handleFieldChange('number_of_vendor_bills_processed_monthly', val)}
-            />
-            <Flex direction="row" gap="lg">
-            <Flex direction="column" gap="md">
-            <Select
+              />
+              <Select
                 label="Bill Pay Method"
                 name="bill_pay_method"
                 options={optionsMap.bill_pay_method || []}
                 value={formData.bill_pay_method}
                 onChange={(val) => handleFieldChange('bill_pay_method', val)}
-            />
-            <Select
+              />
+              {formData.bill_pay_method &&
+                formData.bill_pay_method.toLowerCase() === 'other' && (
+                  <Input
+                    label="Bill Pay Method (Other)"
+                    name="bill_pay_method__other_"
+                    value={formData.bill_pay_method__other_}
+                    onChange={(val) => handleFieldChange('bill_pay_method__other_', val)}
+                  />
+                )}
+              <Select
                 label="Expense Reimbursement App"
                 name="expense_reimbursement_app"
                 options={optionsMap.expense_reimbursement_app || []}
                 value={formData.expense_reimbursement_app}
                 onChange={(val) => handleFieldChange('expense_reimbursement_app', val)}
-            />
-            <Select
+              />
+              {formData.expense_reimbursement_app &&
+                formData.expense_reimbursement_app.toLowerCase() === 'other' && (
+                  <Input
+                    label="Expense Reimbursement App (Other)"
+                    name="expense_reimbursement_app__other_"
+                    value={formData.expense_reimbursement_app__other_}
+                    onChange={(val) => handleFieldChange('expense_reimbursement_app__other_', val)}
+                  />
+                )}
+            </Flex>
+            <Flex direction="column" gap="sm">
+              <Input
+                label="Accounting Platform (Other)"
+                name="accounting_platform__other_"
+                value={formData.accounting_platform__other_}
+                onChange={(val) => handleFieldChange('accounting_platform__other_', val)}
+              />
+              <Input
+                label="Credit Card(s)"
+                name="credit_card_s_"
+                value={formData.credit_card_s_}
+                onChange={(val) => handleFieldChange('credit_card_s_', val)}
+              />
+              <NumberInput
+                label="Number of Vendor Bills Processed Monthly"
+                name="number_of_vendor_bills_processed_monthly"
+                placeholder="0"
+                formatStyle="decimal"
+                value={formData.number_of_vendor_bills_processed_monthly}
+                onChange={(val) => handleFieldChange('number_of_vendor_bills_processed_monthly', val)}
+              />
+
+              <Select
                 label="Equity Management Tool"
                 name="cap_table_management"
                 options={optionsMap.cap_table_management || []}
                 value={formData.cap_table_management}
                 onChange={(val) => handleFieldChange('cap_table_management', val)}
-            />
+              />
+              {formData.cap_table_management &&
+                formData.cap_table_management.toLowerCase() === 'other' && (
+                  <Input
+                    label="Equity Management Tool (Other)"
+                    name="cap_table_management__other_"
+                    value={formData.cap_table_management__other_}
+                    onChange={(val) => handleFieldChange('cap_table_management__other_', val)}
+                  />
+                )}
             </Flex>
-            <Flex direction="column" gap="md">
-            <Input 
-                label="Bill Pay Method (Other)"
-                name="bill_pay_method__other_"
-                value={formData.bill_pay_method__other_}
-                onChange={(val) => handleFieldChange('bill_pay_method__other_', val)}
-            />
-            <Input
-                label="Expense Reimbursement App (Other)"
-                name="expense_reimbursement_app__other_"
-                value={formData.expense_reimbursement_app__other_}
-                onChange={(val) => handleFieldChange('expense_reimbursement_app__other_', val)}
-            />
-            <Input
-                label="Equity Management Tool (Other)"
-                name="cap_table_management__other_"
-                value={formData.cap_table_management__other_}
-                onChange={(val) => handleFieldChange('cap_table_management__other_', val)}
-            />
-            </Flex>
-            </Flex>
+          </Flex>
           <Divider />
           <Flex direction="row" justify="end" align="center">
-            <Button variant="primary" type="submit">
-              Save {saveSuccess && <Icon name="success" />}
+            <Button variant="primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Saving' : 'Save'}
             </Button>
           </Flex>
         </Form>
+      </Tile>
+
+      {/* Revenue Recognition */}
+      <Tile>
         <Heading>Revenue Recognition</Heading>
         <Text variant="microcopy">This section must be completed by AEs.</Text>
         <Divider />
         <Form onSubmit={handleSubmit}>
-        <Flex direction="row" gap="lg">
-          <Flex direction="column" gap="md">
-          <Input
-                label="Revenue Recognition Process"
-                name="revenue_recognition_process"
-                value={formData.revenue_recognition_process}
-                onChange={(val) => handleFieldChange('revenue_recognition_process', val)}
+          -            <Input
+            label="Revenue Recognition Process"
+            name="revenue_recognition_process"
+            value={formData.revenue_recognition_process}
+            onChange={(val) => handleFieldChange('revenue_recognition_process', val)}
           />
-          <Select
+          <Flex direction="row" gap="sm">
+            <Flex direction="column" gap="sm">
+              <Select
                 label="Payroll Service Provider"
                 name="payroll_service_provider"
                 options={optionsMap.payroll_service_provider || []}
                 value={formData.payroll_service_provider}
                 onChange={(val) => handleFieldChange('payroll_service_provider', val)}
-          />
-          <NumberInput
+              />
+              {formData.payroll_service_provider &&
+                formData.payroll_service_provider.toLowerCase() === 'other' && (
+                  <Input
+                    label="Payroll Service Provider (Other)"
+                    name="payroll_service_provider__other_"
+                    value={formData.payroll_service_provider__other_}
+                    onChange={(val) => handleFieldChange('payroll_service_provider__other_', val)}
+                  />
+                )}
+              <NumberInput
                 label="Number of Contractors"
                 name="number_of_contractors"
                 placeholder="0"
-                formatStyle='decimal'
+                formatStyle="decimal"
                 value={formData.number_of_contractors}
                 onChange={(val) => handleFieldChange('number_of_contractors', val)}
-          />
+              />
             </Flex>
-            <Flex direction="column" gap="md">
-            <Select
+            <Flex direction="column" gap="sm">
+              <Select
                 label="Cash or Accrual Method"
                 name="cash_or_accrual_method"
                 options={optionsMap.cash_or_accrual_method || []}
                 value={formData.cash_or_accrual_method}
                 onChange={(val) => handleFieldChange('cash_or_accrual_method', val)}
-            />
-            <Input
-                label="Payroll Service Provider (Other)"
-                name="payroll_service_provider__other_"
-                value={formData.payroll_service_provider__other_}
-                onChange={(val) => handleFieldChange('payroll_service_provider__other_', val)}
-            />
-            <Select
+              />
+              <Select
                 label="Entity Consolidation Required"
                 name="entity_consolidation_required"
                 options={optionsMap.entity_consolidation_required || []}
                 value={formData.entity_consolidation_required}
                 onChange={(val) => handleFieldChange('entity_consolidation_required', val)}
-            />
+              />
             </Flex>
-            </Flex>
-            <Flex direction="row" justify="end" align="center">
-              <Button variant="primary" type="submit">
-                Save {saveSuccess && <Icon name="success" />}
-              </Button>
+          </Flex>
+          <Divider />
+          <Flex direction="row" justify="end" align="center">
+            <Button variant="primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Saving' : 'Save'}
+            </Button>
           </Flex>
         </Form>
+      </Tile>
+
+      {/* E-Commerce Information */}
+      <Tile>
         <Heading>E-Commerce Information</Heading>
         <Text variant="microcopy">This section must be completed by AEs.</Text>
         <Form onSubmit={handleSubmit}>
-        <Flex direction="row" gap="lg">
-          <Flex direction="column" gap="md">
-          <Select
-            label="Manufacturing Company"
-            name="manufacturing_company"
-            options={optionsMap.manufacturing_company || []}
-            value={formData.manufacturing_company}
-            onChange={(val) =>
-              handleFieldChange('manufacturing_company', val)
-            }
-          />
-          <NumberInput
-            label="Number of Registered Sales Tax States"
-            name="number_of_registered_sales_tax_states"
-            placeholder="0"
-            formatStyle='decimal'
-            value={formData.number_of_registered_sales_tax_states}
-            onChange={(val) => handleFieldChange('number_of_registered_sales_tax_states', val)}
-          />
-          <MultiSelect
-            label="Current E-Commerce Platform(s)"
-            name="current_ecommerce_platform_s_"
-            options={optionsMap.current_ecommerce_platform_s_ || []}
-            value={formData.current_ecommerce_platform_s_}
-            onChange={(val) => handleFieldChange('current_ecommerce_platform_s_', val)}
-          />
-          <Select
-            label='Automated Inventory Management Platform'
-            name='automated_inventory_management_platform'
-            options={optionsMap.automated_inventory_management_platform || []}
-            value={formData.automated_inventory_management_platform}
-            onChange={(val) => handleFieldChange('automated_inventory_management_platform', val)}
-          />
-          <NumberInput
-            label="Number of SKUs"
-            name="number_of_skus"
-            placeholder="0"
-            formatStyle='decimal'
-            value={formData.number_of_skus}
-            onChange={(val) => handleFieldChange('number_of_skus', val)}
-          />
+          <Flex direction="row" gap="sm">
+            <Flex direction="column" gap="sm">
+              <Select
+                label="Manufacturing Company"
+                name="manufacturing_company"
+                options={optionsMap.manufacturing_company || []}
+                value={formData.manufacturing_company}
+                onChange={(val) => handleFieldChange('manufacturing_company', val)}
+              />
+              <NumberInput
+                label="Number of Registered Sales Tax States"
+                name="number_of_registered_sales_tax_states"
+                placeholder="0"
+                formatStyle="decimal"
+                value={formData.number_of_registered_sales_tax_states}
+                onChange={(val) => handleFieldChange('number_of_registered_sales_tax_states', val)}
+              />
+              <MultiSelect
+                label="Current E-Commerce Platform(s)"
+                name="current_ecommerce_platform_s_"
+                options={optionsMap.current_ecommerce_platform_s_ || []}
+                value={formData.current_ecommerce_platform_s_}
+                onChange={(val) => handleFieldChange('current_ecommerce_platform_s_', val)}
+              />
+              <Select
+                label="Automated Inventory Platform"
+                name="automated_inventory_management_platform"
+                options={optionsMap.automated_inventory_management_platform || []}
+                value={formData.automated_inventory_management_platform}
+                onChange={(val) => handleFieldChange('automated_inventory_management_platform', val)}
+              />
+            </Flex>
+            <Flex direction="column" gap="sm">
+              <MultiSelect
+                label="Managing Inventory Status"
+                name="managing_inventory_status"
+                options={optionsMap.managing_inventory_status || []}
+                value={formData.managing_inventory_status}
+                onChange={(val) => handleFieldChange('managing_inventory_status', val)}
+              />
+              <NumberInput
+                label="Number of Warehouses (3PLs) Utilized"
+                name="number_of_warehouses__3pls__utilized"
+                placeholder="0"
+                formatStyle="decimal"
+                value={formData.number_of_warehouses__3pls__utilized}
+                onChange={(val) => handleFieldChange('number_of_warehouses__3pls__utilized', val)}
+              />
+              {Array.isArray(formData.current_ecommerce_platform_s_) &&
+                formData.current_ecommerce_platform_s_.some(
+                  (v) => v.toLowerCase() === 'other'
+                ) && (
+                  <Input
+                    label="Current E-Commerce Platform (Other)"
+                    name="current_ecommerce_platform__other_"
+                    value={formData.current_ecommerce_platform__other_}
+                    onChange={(val) => handleFieldChange('current_ecommerce_platform__other_', val)}
+                  />
+                )}
+              {formData.automated_inventory_management_platform &&
+                formData.automated_inventory_management_platform.toLowerCase() === 'other' && (
+                  <Input
+                    label="Automated Inventory Platform (Other)"
+                    name="automated_inventory_management_platform__other_"
+                    value={formData.automated_inventory_management_platform__other_}
+                    onChange={(val) =>
+                      handleFieldChange('automated_inventory_management_platform__other_', val)
+                    }
+                  />
+                )}
+              <NumberInput
+                label="Number of AP Bills Processed Monthly"
+                name="number_of_ap_bills_processed_monthly"
+                placeholder="0"
+                formatStyle="decimal"
+                value={formData.number_of_ap_bills_processed_monthly}
+                onChange={(val) => handleFieldChange('number_of_ap_bills_processed_monthly', val)}
+              />
+              <NumberInput
+                label="Number of SKUs"
+                name="number_of_skus"
+                placeholder="0"
+                formatStyle="decimal"
+                value={formData.number_of_skus}
+                onChange={(val) => handleFieldChange('number_of_skus', val)}
+              />
+            </Flex>
           </Flex>
-          <Flex direction="column" gap="md">
-            <MultiSelect
-              label="Managing Inventory Status"
-              name="managing_inventory_status"
-              options={optionsMap.managing_inventory_status || []}
-              value={formData.managing_inventory_status}
-              onChange={(val) => handleFieldChange('managing_inventory_status', val)}
-            />
-            <NumberInput
-              label='Number of Warehouses (3PLs) Utilized'
-              name='number_of_warehouses__3pls__utilized'
-              placeholder='0'
-              formatStyle='decimal'
-              value={formData.number_of_warehouses__3pls__utilized}
-              onChange={(val) => handleFieldChange('number_of_warehouses__3pls__utilized', val)}
-            />
-            <Input
-              label='Current E-Commerce Platform (Other)'
-              name='current_ecommerce_platform__other_'
-              value={formData.current_ecommerce_platform__other_}
-              onChange={(val) => handleFieldChange('current_ecommerce_platform__other_', val)}
-            />
-            <Input
-              label='Automated Inventory Management Platform (Other)'
-              name='automated_inventory_management_platform__other_'
-              value={formData.automated_inventory_management_platform__other_}
-              onChange={(val) => handleFieldChange('automated_inventory_management_platform__other_', val)}
-            />
-            <NumberInput
-              label='Number of AP Bills Processed Monthly'
-              name='number_of_ap_bills_processed_monthly'
-              placeholder='0'
-              formatStyle='decimal'
-              value={formData.number_of_ap_bills_processed_monthly}
-              onChange={(val) => handleFieldChange('number_of_ap_bills_processed_monthly', val)}
-            />
+          <TextArea
+            label="Sales Tax Remittance Process"
+            name="sales_tax_remittance_process"
+            value={formData.sales_tax_remittance_process}
+            onChange={(val) => handleFieldChange('sales_tax_remittance_process', val)}
+          />
+          <Divider />
+          <Flex direction="row" justify="end" align="center">
+            <Button variant="primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Saving' : 'Save'}
+            </Button>
           </Flex>
-        </Flex>
-        <TextArea
-          label="Sales Tax Remittance Process"
-          name="sales_tax_remittance_process"
-          value={formData.sales_tax_remittance_process}
-          onChange={(val) => handleFieldChange('sales_tax_remittance_process', val)}
-        />
-        <Flex direction="row" justify="end" align="center">
-          <Button variant="primary" type="submit">
-            Save {saveSuccess && <Icon name="success" />}
-          </Button>
-        </Flex>
         </Form>
-      </Flex>
-    </Tile>
+      </Tile>
+    </>
   );
 };
 
